@@ -1280,8 +1280,8 @@ class Assistant(object):
 
         预约抢购商品特点：
             1.需要提前点击预约
-            2.大部分此类商品在预约后自动加入购物车，但是无法勾选✓，也无法️进入到结算页面
-            3.到了抢购的时间点后将商品加入购物车，此时才能勾选并下单
+            2.大部分此类商品在预约后无法加入购物车（20200222），马上抢购后会进入到结算页面
+            3 直接在抢购页面下单
 
         注意：
             1.请在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）
@@ -1297,16 +1297,18 @@ class Assistant(object):
         t = Timer(buy_time=buy_time)
         t.start()
 
-        self.add_item_to_cart(sku_ids={sku_id: num})
-
-        for count in range(1, retry + 1):
-            logger.info('第[%s/%s]次尝试提交订单', count, retry)
-            if self.submit_order():
-                break
-            logger.info('休息%ss', interval)
-            time.sleep(interval)
+       for count in range(1, retry + 1):
+            logger.info('第[%s/%s]次尝试抢购商品:%s', count, retry, sku_id)
+            self.request_seckill_url(sku_id)
+            self.request_seckill_checkout_page(sku_id, num)
+            if self.submit_seckill_order(sku_id, num):
+                return True
+            else:
+                logger.info('休息%ss', interval)
+                time.sleep(interval)
         else:
-            logger.info('执行结束，提交订单失败！')
+            logger.info('执行结束，抢购%s失败！', sku_id)
+            return False
 
     @check_login
     def buy_item_in_stock(self, sku_ids, area, wait_all=False, stock_interval=3, submit_retry=3, submit_interval=5):
