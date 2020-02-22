@@ -13,17 +13,17 @@ from bs4 import BeautifulSoup
 from config import global_config
 from exception import AsstException
 from log import logger
-from messenger import Messenger
 from timer import Timer
 from util import (
-    DEFAULT_TIMEOUT,
-    DEFAULT_USER_AGENT,
+    USER_AGENT,
+    DEFAULT_FP,
+    DEFAULT_EID,
+    DEFAULT_TRACK_ID,
     check_login,
     deprecated,
     encrypt_pwd,
     encrypt_payment_pwd,
     get_tag_value,
-    get_random_useragent,
     open_image,
     parse_area_id,
     parse_json,
@@ -38,31 +38,27 @@ from util import (
 class Assistant(object):
 
     def __init__(self):
-        use_random_ua = global_config.getboolean('config', 'random_useragent')
-        self.user_agent = DEFAULT_USER_AGENT if not use_random_ua else get_random_useragent()
-        self.headers = {'User-Agent': self.user_agent}
-        self.eid = global_config.get('config', 'eid')
-        self.fp = global_config.get('config', 'fp')
-        self.track_id = global_config.get('config', 'track_id')
-        self.risk_control = global_config.get('config', 'risk_control')
-        if not self.eid or not self.fp or not self.track_id or not self.risk_control:
-            raise AsstException('请在 config.ini 中配置 eid, fp, track_id, risk_control 参数，具体请参考 wiki-常见问题')
-
-        self.timeout = float(global_config.get('config', 'timeout') or DEFAULT_TIMEOUT)
-        self.send_message = global_config.getboolean('messenger', 'enable')
-        self.messenger = Messenger(global_config.get('messenger', 'sckey')) if self.send_message else None
+        self.username = ''
+        self.nick_name = ''
+        self.is_login = False
+        self.headers = {
+            'User-Agent': USER_AGENT,
+        }
+        self.sess = requests.session()
 
         self.item_cat = dict()
         self.item_vender_ids = dict()  # 记录商家id
+        self.item_states = dict()  # 记录商品上架状态
+
+        self.risk_control = ''
+        self.eid = global_config.get('config', 'eid') or DEFAULT_EID
+        self.fp = global_config.get('config', 'fp') or DEFAULT_FP
+        self.track_id = DEFAULT_TRACK_ID
 
         self.seckill_init_info = dict()
         self.seckill_order_data = dict()
         self.seckill_url = dict()
 
-        self.username = ''
-        self.nick_name = ''
-        self.is_login = False
-        self.sess = requests.session()
         try:
             self._load_cookies()
         except Exception:
@@ -87,11 +83,8 @@ class Assistant(object):
         with open(cookies_file, 'wb') as f:
             pickle.dump(self.sess.cookies, f)
 
-    def _validate_cookies(self):
-        """验证cookies是否有效（是否登陆）
-        通过访问用户订单列表页进行判断：若未登录，将会重定向到登陆页面。
-        :return: cookies是否有效 True/False
-        """
+    def _validate_cookies(self):  # True -- cookies is valid, False -- cookies is invalid
+        # user can't access to order list page (would redirect to login page) if his cookies is expired
         url = 'https://order.jd.com/center/list.action'
         payload = {
             'rid': str(int(time.time() * 1000)),
@@ -136,7 +129,7 @@ class Assistant(object):
             'yys': str(int(time.time() * 1000)),
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://passport.jd.com/uc/login',
         }
         resp = self.sess.get(url, params=payload, headers=headers)
@@ -204,7 +197,7 @@ class Assistant(object):
         data['loginname'] = username
         data['nloginpwd'] = encrypt_pwd(password)
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Origin': 'https://passport.jd.com',
         }
         resp = self.sess.post(url=login_url, data=data, headers=headers, params=payload)
@@ -257,7 +250,7 @@ class Assistant(object):
             't': str(int(time.time() * 1000)),
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://passport.jd.com/new/login.aspx',
         }
         resp = self.sess.get(url=url, headers=headers, params=payload)
@@ -281,7 +274,7 @@ class Assistant(object):
             '_': str(int(time.time() * 1000)),
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://passport.jd.com/new/login.aspx',
         }
         resp = self.sess.get(url=url, headers=headers, params=payload)
@@ -301,7 +294,7 @@ class Assistant(object):
     def _validate_QRcode_ticket(self, ticket):
         url = 'https://passport.jd.com/uc/qrCodeTicketValidation'
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://passport.jd.com/uc/login?ltype=logout',
         }
         resp = self.sess.get(url=url, headers=headers, params={'t': ticket})
@@ -357,7 +350,7 @@ class Assistant(object):
             'sku': sku_id,
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
         resp = self.sess.get(url=url, params=payload, headers=headers)
@@ -377,7 +370,7 @@ class Assistant(object):
             logger.error('%s 非预约商品', sku_id)
             return
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
         resp = self.sess.get(url=reserve_url, headers=headers)
@@ -397,7 +390,7 @@ class Assistant(object):
             '_': str(int(time.time() * 1000)),
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://order.jd.com/center/list.action',
         }
         try:
@@ -426,7 +419,6 @@ class Assistant(object):
         :return: 商品是否有货 True/False
         """
         area_id = parse_area_id(area)
-
         cat = self.item_cat.get(sku_id)
         vender_id = self.item_vender_ids.get(sku_id)
         if not cat:
@@ -452,31 +444,25 @@ class Assistant(object):
             'venderId': vender_id  # return seller information with this param (can't be ignored)
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
-
-        resp_text = ''
         try:
-            resp_text = requests.get(url=url, params=payload, headers=headers, timeout=self.timeout).text
-            resp_json = parse_json(resp_text)
-            stock_info = resp_json.get('stock')
-            sku_state = stock_info.get('skuState')  # 商品是否上架
-            stock_state = stock_info.get('StockState')  # 商品库存状态：33 -- 现货  0,34 -- 无货  36 -- 采购中  40 -- 可配货
-            return sku_state == 1 and stock_state in (33, 40)
+            resp = requests.get(url=url, params=payload, headers=headers, timeout=10)
         except requests.exceptions.Timeout:
-            logger.error('查询 %s 库存信息超时(%ss)', sku_id, self.timeout)
+            logger.error('查询 %s 库存信息超时(10s)', sku_id)
             return False
-        except requests.exceptions.RequestException as request_exception:
-            logger.error('查询 %s 库存信息发生网络请求异常：%s', sku_id, request_exception)
-            return False
-        except Exception as e:
-            logger.error('查询 %s 库存信息发生异常, resp: %s, exception: %s', sku_id, resp_text, e)
-            return False
+        except requests.exceptions.RequestException as e:
+            raise AsstException('查询 %s 库存信息异常：%s' % (sku_id, e))
+
+        resp_json = parse_json(resp.text)
+        stock_state = resp_json['stock']['StockState']  # 33 -- 现货  0,34 -- 无货  36 -- '采购中'  40 -- 可配货
+        # stock_state_name = resp_json['stock']['StockStateName']
+        return stock_state in (33, 40)
 
     @check_login
     def get_multi_item_stock(self, sku_ids, area):
-        """获取多个商品库存状态（旧）
+        """获取多个商品库存状态
 
         该方法需要登陆才能调用，用于同时查询多个商品的库存。
         京东查询接口返回每种商品的状态：有货/无货。当所有商品都有货，返回True；否则，返回False。
@@ -490,7 +476,7 @@ class Assistant(object):
 
         url = 'https://trade.jd.com/api/v1/batch/stock'
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Origin': 'https://trade.jd.com',
             'Content-Type': 'application/json; charset=UTF-8',
             'Referer': 'https://trade.jd.com/shopping/order/getOrderInfo.action?rid=' + str(int(time.time() * 1000)),
@@ -513,9 +499,9 @@ class Assistant(object):
         data = json.dumps(data)
 
         try:
-            resp = self.sess.post(url=url, headers=headers, data=data, timeout=self.timeout)
+            resp = self.sess.post(url=url, headers=headers, data=data, timeout=10)
         except requests.exceptions.Timeout:
-            logger.error('查询 %s 库存信息超时(%ss)', list(items_dict.keys()), self.timeout)
+            logger.error('查询 %s 库存信息超时(10s)', list(items_dict.keys()))
             return False
         except requests.exceptions.RequestException as e:
             raise AsstException('查询 %s 库存信息异常：%s' % (list(items_dict.keys()), e))
@@ -532,53 +518,6 @@ class Assistant(object):
 
         return stock
 
-    def get_multi_item_stock_new(self, sku_ids, area):
-        """获取多个商品库存状态（新）
-
-        当所有商品都有货，返回True；否则，返回False。
-
-        :param sku_ids: 多个商品的id。可以传入中间用英文逗号的分割字符串，如"123,456"
-        :param area: 地区id
-        :return: 多个商品是否同时有货 True/False
-        """
-        items_dict = parse_sku_id(sku_ids=sku_ids)
-        area_id = parse_area_id(area=area)
-
-        url = 'https://c0.3.cn/stocks'
-        payload = {
-            'callback': 'jQuery{}'.format(random.randint(1000000, 9999999)),
-            'type': 'getstocks',
-            'skuIds': ','.join(items_dict.keys()),
-            'area': area_id,
-            '_': str(int(time.time() * 1000))
-        }
-        headers = {
-            'User-Agent': self.user_agent
-        }
-
-        resp_text = ''
-        try:
-            resp_text = requests.get(url=url, params=payload, headers=headers, timeout=self.timeout).text
-            stock = True
-            for sku_id, info in parse_json(resp_text).items():
-                sku_state = info.get('skuState')  # 商品是否上架
-                stock_state = info.get('StockState')  # 商品库存状态
-                if sku_state == 1 and stock_state in (33, 40):
-                    continue
-                else:
-                    stock = False
-                    break
-            return stock
-        except requests.exceptions.Timeout:
-            logger.error('查询 %s 库存信息超时(%ss)', list(items_dict.keys()), self.timeout)
-            return False
-        except requests.exceptions.RequestException as request_exception:
-            logger.error('查询 %s 库存信息发生网络请求异常：%s', list(items_dict.keys()), request_exception)
-            return False
-        except Exception as e:
-            logger.error('查询 %s 库存信息发生异常, resp: %s, exception: %s', list(items_dict.keys()), resp_text, e)
-            return False
-
     def _if_item_removed(self, sku_id):
         """判断商品是否下架
         :param sku_id: 商品id
@@ -590,6 +529,11 @@ class Assistant(object):
     @check_login
     def if_item_can_be_ordered(self, sku_ids, area):
         """判断商品是否能下单
+
+        执行逻辑：
+        1. 查询京东单个/多个商品库存接口是否有货
+        2. 查询商品是否下架（存在查询库存接口显示有货，但是商品已下架的情况）
+
         :param sku_ids: 商品id，多个商品id中间使用英文逗号进行分割
         :param area: 地址id
         :return: 商品是否能下单 True/False
@@ -597,12 +541,26 @@ class Assistant(object):
         items_dict = parse_sku_id(sku_ids=sku_ids)
         area_id = parse_area_id(area)
 
-        # 判断商品是否能下单
+        # 查询商品库存
         if len(items_dict) > 1:
-            return self.get_multi_item_stock_new(sku_ids=items_dict, area=area_id)
+            in_stock = self.get_multi_item_stock(sku_ids=items_dict, area=area_id)
+        else:
+            sku_id, count = list(items_dict.items())[0]
+            in_stock = self.get_single_item_stock(sku_id=sku_id, num=count, area=area_id)
 
-        sku_id, count = list(items_dict.items())[0]
-        return self.get_single_item_stock(sku_id=sku_id, num=count, area=area_id)
+        if not in_stock:
+            return False
+
+        for sku_id in items_dict:
+            if self.item_states.get(sku_id, False):  # 商品已上架
+                continue
+
+            if self._if_item_removed(sku_id=sku_id):  # 商品未上架
+                return False
+            else:
+                self.item_states[sku_id] = True
+
+        return True
 
     def get_item_price(self, sku_id):
         """获取商品价格
@@ -634,7 +592,7 @@ class Assistant(object):
         """
         url = 'https://cart.jd.com/gate.action'
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
         }
 
         for sku_id, count in parse_sku_id(sku_ids=sku_ids).items():
@@ -696,8 +654,8 @@ class Assistant(object):
 
         cart_detail = dict()
         for item in soup.find_all(class_='item-item'):
+            sku_id = item['skuid']  # 商品id
             try:
-                sku_id = item['skuid']  # 商品id
                 # 例如：['increment', '8888', '100001071956', '1', '13', '0', '50067652554']
                 # ['increment', '8888', '100002404322', '2', '1', '0']
                 item_attr_list = item.find(class_='increment')['id'].split('_')
@@ -716,7 +674,7 @@ class Assistant(object):
                     'promo_id': promo_id
                 }
             except Exception as e:
-                logger.error("某商品在购物车中的信息无法解析，报错信息: %s，该商品自动忽略。 %s", e, item)
+                logger.error("商品%s在购物车中的信息无法解析，报错信息: %s，该商品自动忽略", sku_id, e)
 
         logger.info('购物车信息：%s', cart_detail)
         return cart_detail
@@ -761,7 +719,7 @@ class Assistant(object):
             # 'locationId'
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://cart.jd.com/cart',
         }
         resp = self.sess.post(url, data=data, headers=headers)
@@ -832,8 +790,10 @@ class Assistant(object):
 
             logger.info("下单信息：%s", order_detail)
             return order_detail
+        except requests.exceptions.RequestException as e:
+            raise AsstException('订单结算页面获取异常：%s' % e)
         except Exception as e:
-            logger.error('订单结算页面数据解析异常（可以忽略），报错信息：%s', e)
+            logger.error('下单页面数据解析异常：%s', e)
 
     def _save_invoice(self):
         """下单第三方商品时如果未设置发票，将从电子发票切换为普通发票
@@ -883,7 +843,7 @@ class Assistant(object):
             "invoiceParam.saveInvoiceFlag": 1
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://trade.jd.com/shopping/dynamic/invoice/saveInvoice.action',
         }
         self.sess.post(url=url, data=data, headers=headers)
@@ -923,7 +883,7 @@ class Assistant(object):
             data['submitOrderParam.payPassword'] = encrypt_payment_pwd(payment_pwd)
 
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'trade.jd.com',
             'Referer': 'http://trade.jd.com/shopping/order/getOrderInfo.action',
         }
@@ -943,10 +903,7 @@ class Assistant(object):
             # {'overSea': False, 'orderXml': None, 'cartXml': None, 'noStockSkuIds': '', 'reqInfo': None, 'hasJxj': False, 'addedServiceList': None, 'sign': None, 'pin': 'xxx', 'needCheckCode': False, 'success': True, 'resultCode': 0, 'orderId': 8740xxxxx, 'submitSkuNum': 1, 'deductMoneyFlag': 0, 'goJumpOrderCenter': False, 'payInfo': None, 'scaleSkuInfoListVO': None, 'purchaseSkuInfoListVO': None, 'noSupportHomeServiceSkuList': None, 'msgMobile': None, 'addressVO': None, 'msgUuid': None, 'message': None}
 
             if resp_json.get('success'):
-                order_id = resp_json.get('orderId')
-                logger.info('订单提交成功! 订单号：%s', order_id)
-                if self.send_message:
-                    self.messenger.send(text='jd-assistant 订单提交成功', desp='订单号：%s' % order_id)
+                logger.info('订单提交成功! 订单号：%s', resp_json.get('orderId'))
                 return True
             else:
                 message, result_code = resp_json.get('message'), resp_json.get('resultCode')
@@ -1021,7 +978,7 @@ class Assistant(object):
             's': 4096,
         }  # Orders for nearly three months
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Referer': 'https://passport.jd.com/uc/login?ltype=logout',
         }
 
@@ -1104,7 +1061,7 @@ class Assistant(object):
             '_': str(int(time.time() * 1000)),
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'itemko.jd.com',
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
@@ -1131,7 +1088,7 @@ class Assistant(object):
         if not self.seckill_url.get(sku_id):
             self.seckill_url[sku_id] = self._get_seckill_url(sku_id)
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'marathon.jd.com',
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
@@ -1151,7 +1108,7 @@ class Assistant(object):
             'rid': int(time.time())
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'marathon.jd.com',
             'Referer': 'https://item.jd.com/{}.html'.format(sku_id),
         }
@@ -1171,7 +1128,7 @@ class Assistant(object):
             'isModifyAddress': 'false',
         }
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'marathon.jd.com',
         }
         resp = self.sess.post(url=url, data=data, headers=headers)
@@ -1227,7 +1184,6 @@ class Assistant(object):
             'eid': self.eid,
             'fp': self.fp,
             'token': token,
-            'pru': ''
         }
         return data
 
@@ -1245,7 +1201,7 @@ class Assistant(object):
         if not self.seckill_order_data.get(sku_id):
             self.seckill_order_data[sku_id] = self._gen_seckill_order_data(sku_id, num)
         headers = {
-            'User-Agent': self.user_agent,
+            'User-Agent': USER_AGENT,
             'Host': 'marathon.jd.com',
             'Referer': 'https://marathon.jd.com/seckill/seckill.action?skuId={0}&num={1}&rid={2}'.format(
                 sku_id, num, int(time.time())),
@@ -1274,7 +1230,7 @@ class Assistant(object):
     def exec_seckill(self, sku_id, retry=4, interval=4, num=1):
         """立即抢购
 
-        抢购商品的下单流程与普通商品不同，不支持加入购物车，可能需要提前预约，主要执行流程如下：
+        抢购商品的下单流程与普通商品不同，不支持加入购物车，主要执行流程如下：
         1. 访问商品的抢购链接
         2. 访问抢购订单结算页面（好像可以省略这步，待测试）
         3. 提交抢购（秒杀）订单
@@ -1324,8 +1280,8 @@ class Assistant(object):
 
         预约抢购商品特点：
             1.需要提前点击预约
-            2.大部分此类商品在预约后自动加入购物车，在购物车中可见但无法勾选✓，也无法进入到结算页面（重要特征）
-            3.到了抢购的时间点后，才能勾选并结算下单
+            2.大部分此类商品在预约后自动加入购物车，但是无法勾选✓，也无法️进入到结算页面
+            3.到了抢购的时间点后将商品加入购物车，此时才能勾选并下单
 
         注意：
             1.请在抢购开始前手动清空购物车中此类无法勾选的商品！（因为脚本在执行清空购物车操作时，无法清空不能勾选的商品）

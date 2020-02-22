@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![star, issue](https://img.shields.io/badge/star%2C%20issue-welcome-brightgreen.svg)](https://github.com/tychxn/jd-assistant)
 
-京东抢购助手（短期内不再更新）
+京东抢购助手
 
 ## 主要功能
 
@@ -54,8 +54,6 @@ pip install -r requirements.txt
 
 ## 更新记录
 
-- 【2020.02.08】修复了查询库存接口响应数据结构变化导致的问题。
-- 【2020.02.06】添加下单成功消息推送功能；新增配置参数以减少各种异常情况。
 - 【2020.02.03】查询商品库存方法添加超时，避免少数情况下的卡死问题；对部分代码进行了优化。
 - 【2020.02.02】重写了监控库存提交订单功能：监控多商品时可以下单任一有库存商品，具体使用方式请参考wiki。
 - 【2020.01.29】修复了自定义商品数量时的bug。
@@ -72,19 +70,22 @@ pip install -r requirements.txt
 ## 备注
 
 - 🌟强烈建议大家在部署代码前使用有货的商品测试下单流程，并且：在京东购物车结算页面设置发票为`电子普通发票-个人`，设置支付方式为`在线支付`，否则可能出现各种未知的下单失败问题。🌟
-- 京东商城的登陆/下单机制经常改动，当前测试时间`2020.02.08`。如果失效，欢迎提issue，我会来更新。
+- 京东商城的登陆/下单机制经常改动，当前测试时间`2020.01.28`。如果失效，欢迎提issue，我会来更新。
+- 图片查看器背景颜色为黑色时，二维码会出现无法扫描的情况 (多发于`win10`系统)，请更换软件打开图片。
 - 代码在`macOS`中编写，如果在其他平台上运行出行问题，欢迎提issue。
+- 如果 `git clone` 速度太慢，请去下方 `码云` 备份地址下载。
 
 ## 待完成的功能
 
-- [ ] Keep session alive
 - [ ] 抢优惠券
+- [ ] 邮件通知
 
 ## 不考虑的功能
 
 - ✖️ 支付功能
 - ✖️ 多账号抢购
 
-## Sponsor
+## 备份地址
 
-[![JetBrains](./docs/jetbrains.svg)](https://www.jetbrains.com/?from=jd-assistant)
+- GitHub: [https://github.com/tychxn/jd-assistant](https://github.com/tychxn/jd-assistant)
+- 码云: [https://gitee.com/tychxn/jd-assistant](https://gitee.com/tychxn/jd-assistant)
