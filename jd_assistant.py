@@ -1297,7 +1297,7 @@ class Assistant(object):
         t = Timer(buy_time=buy_time)
         t.start()
 
-       for count in range(1, retry + 1):
+        for count in range(1, retry + 1):
             logger.info('第[%s/%s]次尝试抢购商品:%s', count, retry, sku_id)
             self.request_seckill_url(sku_id)
             self.request_seckill_checkout_page(sku_id, num)
